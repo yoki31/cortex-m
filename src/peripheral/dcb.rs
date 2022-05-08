@@ -6,6 +6,7 @@ use crate::peripheral::DCB;
 use core::ptr;
 
 const DCB_DEMCR_TRCENA: u32 = 1 << 24;
+const DCB_DEMCR_MON_EN: u32 = 1 << 16;
 
 /// Register block
 #[repr(C)]
@@ -46,6 +47,22 @@ impl DCB {
         }
     }
 
+    /// Enables the [`DebugMonitor`](crate::peripheral::scb::Exception::DebugMonitor) exception
+    #[inline]
+    pub fn enable_debug_monitor(&mut self) {
+        unsafe {
+            self.demcr.modify(|w| w | DCB_DEMCR_MON_EN);
+        }
+    }
+
+    /// Disables the [`DebugMonitor`](crate::peripheral::scb::Exception::DebugMonitor) exception
+    #[inline]
+    pub fn disable_debug_monitor(&mut self) {
+        unsafe {
+            self.demcr.modify(|w| w & !DCB_DEMCR_MON_EN);
+        }
+    }
+
     /// Is there a debugger attached? (see note)
     ///
     /// Note: This function is [reported not to
@@ -57,7 +74,7 @@ impl DCB {
     pub fn is_debugger_attached() -> bool {
         unsafe {
             // do an 8-bit read of the 32-bit DHCSR register, and get the LSB
-            let value = ptr::read_volatile(Self::ptr() as *const u8);
+            let value = ptr::read_volatile(Self::PTR as *const u8);
             value & 0x1 == 1
         }
     }

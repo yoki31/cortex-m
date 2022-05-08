@@ -87,17 +87,18 @@ impl core::convert::TryFrom<u8> for TraceProtocol {
     }
 }
 
-/// The SWO options supported by the TPIU.
+/// The SWO options supported by the TPIU, and the mimimum size of the
+/// FIFO output queue for trace data.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct SWOSupports {
     /// Whether UART/NRZ encoding is supported for SWO.
-    nrz_encoding: bool,
+    pub nrz_encoding: bool,
     /// Whether Manchester encoding is supported for SWO.
-    manchester_encoding: bool,
+    pub manchester_encoding: bool,
     /// Whether parallel trace port operation is supported.
-    parallel_operation: bool,
+    pub parallel_operation: bool,
     /// The minimum implemented FIFO queue size of the TPIU for trace data.
-    min_queue_size: u8,
+    pub min_queue_size: u8,
 }
 
 impl TPIU {
@@ -117,7 +118,6 @@ impl TPIU {
     /// [`trace_output_protocol`](Self::set_trace_output_protocol).
     #[inline]
     pub fn trace_output_protocol(&self) -> Option<TraceProtocol> {
-        use core::convert::TryInto;
         self.sppr.read().txmode().try_into().ok()
     }
 
@@ -149,7 +149,7 @@ impl TPIU {
     /// the TPIU FIFO queue for trace data.
     #[inline]
     pub fn swo_supports() -> SWOSupports {
-        let _type = unsafe { (*Self::ptr())._type.read() };
+        let _type = unsafe { (*Self::PTR)._type.read() };
         SWOSupports {
             nrz_encoding: _type.nrzvalid(),
             manchester_encoding: _type.mancvalid(),

@@ -11,11 +11,11 @@ license = "MIT OR Apache-2.0"
 name = "cortex-m-semihosting"
 readme = "README.md"
 repository = "https://github.com/rust-embedded/cortex-m"
-version = "0.4.1"
-edition = "2018"
+version = "0.5.0"
+edition = "2021"
+rust-version = "1.59"
 
 [features]
-inline-asm = []
 jlink-quirks = []
 no-semihosting = []
 

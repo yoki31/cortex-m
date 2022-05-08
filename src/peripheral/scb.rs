@@ -137,7 +137,7 @@ impl SCB {
     #[inline]
     pub fn fpu_access_mode() -> FpuAccessMode {
         // NOTE(unsafe) atomic read operation with no side effects
-        let cpacr = unsafe { (*Self::ptr()).cpacr.read() };
+        let cpacr = unsafe { (*Self::PTR).cpacr.read() };
 
         if cpacr & SCB_CPACR_FPU_MASK == SCB_CPACR_FPU_ENABLE | SCB_CPACR_FPU_USER {
             FpuAccessMode::Enabled
@@ -170,9 +170,10 @@ impl SCB {
     /// Returns the active exception number
     #[inline]
     pub fn vect_active() -> VectActive {
-        let icsr = unsafe { ptr::read(&(*SCB::ptr()).icsr as *const _ as *const u32) };
+        let icsr =
+            unsafe { ptr::read_volatile(&(*SCB::PTR).icsr as *const _ as *const u32) } & 0x1FF;
 
-        match icsr as u8 {
+        match icsr as u16 {
             0 => VectActive::ThreadMode,
             2 => VectActive::Exception(Exception::NonMaskableInt),
             3 => VectActive::Exception(Exception::HardFault),
@@ -182,7 +183,7 @@ impl SCB {
             5 => VectActive::Exception(Exception::BusFault),
             #[cfg(not(armv6m))]
             6 => VectActive::Exception(Exception::UsageFault),
-            #[cfg(any(armv8m, target_arch = "x86_64"))]
+            #[cfg(any(armv8m, native))]
             7 => VectActive::Exception(Exception::SecureFault),
             11 => VectActive::Exception(Exception::SVCall),
             #[cfg(not(armv6m))]
@@ -197,7 +198,7 @@ impl SCB {
 /// Processor core exceptions (internal interrupts)
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "std-map", derive(PartialOrd, Hash))]
+#[cfg_attr(feature = "std", derive(PartialOrd, Hash))]
 pub enum Exception {
     /// Non maskable interrupt
     NonMaskableInt,
@@ -218,7 +219,7 @@ pub enum Exception {
     UsageFault,
 
     /// Secure fault interrupt (only on ARMv8-M)
-    #[cfg(any(armv8m, target_arch = "x86_64"))]
+    #[cfg(any(armv8m, native))]
     SecureFault,
 
     /// SV call interrupt
@@ -250,7 +251,7 @@ impl Exception {
             Exception::BusFault => -11,
             #[cfg(not(armv6m))]
             Exception::UsageFault => -10,
-            #[cfg(any(armv8m, target_arch = "x86_64"))]
+            #[cfg(any(armv8m, native))]
             Exception::SecureFault => -9,
             Exception::SVCall => -5,
             #[cfg(not(armv6m))]
@@ -264,7 +265,7 @@ impl Exception {
 /// Active exception number
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "std-map", derive(PartialOrd, Hash))]
+#[cfg_attr(feature = "std", derive(PartialOrd, Hash))]
 pub enum VectActive {
     /// Thread mode
     ThreadMode,
@@ -274,15 +275,15 @@ pub enum VectActive {
 
     /// Device specific exception (external interrupts)
     Interrupt {
-        /// Interrupt number. This number is always within half open range `[0, 240)`
-        irqn: u8,
+        /// Interrupt number. This number is always within half open range `[0, 512)` (9 bit)
+        irqn: u16,
     },
 }
 
 impl VectActive {
-    /// Converts a `byte` into `VectActive`
+    /// Converts a vector number into `VectActive`
     #[inline]
-    pub fn from(vect_active: u8) -> Option<Self> {
+    pub fn from(vect_active: u16) -> Option<Self> {
         Some(match vect_active {
             0 => VectActive::ThreadMode,
             2 => VectActive::Exception(Exception::NonMaskableInt),
@@ -293,14 +294,14 @@ impl VectActive {
             5 => VectActive::Exception(Exception::BusFault),
             #[cfg(not(armv6m))]
             6 => VectActive::Exception(Exception::UsageFault),
-            #[cfg(any(armv8m, target_arch = "x86_64"))]
+            #[cfg(any(armv8m, native))]
             7 => VectActive::Exception(Exception::SecureFault),
             11 => VectActive::Exception(Exception::SVCall),
             #[cfg(not(armv6m))]
             12 => VectActive::Exception(Exception::DebugMonitor),
             14 => VectActive::Exception(Exception::PendSV),
             15 => VectActive::Exception(Exception::SysTick),
-            irqn if irqn >= 16 => VectActive::Interrupt { irqn },
+            irqn if (16..512).contains(&irqn) => VectActive::Interrupt { irqn: irqn - 16 },
             _ => return None,
         })
     }
@@ -378,7 +379,7 @@ impl SCB {
         crate::asm::isb();
 
         // NOTE(unsafe): atomic read with no side effects
-        unsafe { (*Self::ptr()).ccr.read() & SCB_CCR_IC_MASK == SCB_CCR_IC_MASK }
+        unsafe { (*Self::PTR).ccr.read() & SCB_CCR_IC_MASK == SCB_CCR_IC_MASK }
     }
 
     /// Invalidates the entire I-cache.
@@ -448,7 +449,7 @@ impl SCB {
         crate::asm::isb();
 
         // NOTE(unsafe) atomic read with no side effects
-        unsafe { (*Self::ptr()).ccr.read() & SCB_CCR_DC_MASK == SCB_CCR_DC_MASK }
+        unsafe { (*Self::PTR).ccr.read() & SCB_CCR_DC_MASK == SCB_CCR_DC_MASK }
     }
 
     /// Invalidates the entire D-cache.
@@ -847,7 +848,7 @@ impl SCB {
     pub fn sys_reset() -> ! {
         crate::asm::dsb();
         unsafe {
-            (*Self::ptr()).aircr.modify(
+            (*Self::PTR).aircr.modify(
                 |r| {
                     SCB_AIRCR_VECTKEY | // otherwise the write is ignored
             r & SCB_AIRCR_PRIGROUP_MASK | // keep priority group unchanged
@@ -874,21 +875,21 @@ impl SCB {
     #[inline]
     pub fn set_pendsv() {
         unsafe {
-            (*Self::ptr()).icsr.write(SCB_ICSR_PENDSVSET);
+            (*Self::PTR).icsr.write(SCB_ICSR_PENDSVSET);
         }
     }
 
     /// Check if PENDSVSET bit in the ICSR register is set meaning PendSV interrupt is pending
     #[inline]
     pub fn is_pendsv_pending() -> bool {
-        unsafe { (*Self::ptr()).icsr.read() & SCB_ICSR_PENDSVSET == SCB_ICSR_PENDSVSET }
+        unsafe { (*Self::PTR).icsr.read() & SCB_ICSR_PENDSVSET == SCB_ICSR_PENDSVSET }
     }
 
     /// Set the PENDSVCLR bit in the ICSR register which will clear a pending PendSV interrupt
     #[inline]
     pub fn clear_pendsv() {
         unsafe {
-            (*Self::ptr()).icsr.write(SCB_ICSR_PENDSVCLR);
+            (*Self::PTR).icsr.write(SCB_ICSR_PENDSVCLR);
         }
     }
 
@@ -896,21 +897,21 @@ impl SCB {
     #[inline]
     pub fn set_pendst() {
         unsafe {
-            (*Self::ptr()).icsr.write(SCB_ICSR_PENDSTSET);
+            (*Self::PTR).icsr.write(SCB_ICSR_PENDSTSET);
         }
     }
 
     /// Check if PENDSTSET bit in the ICSR register is set meaning SysTick interrupt is pending
     #[inline]
     pub fn is_pendst_pending() -> bool {
-        unsafe { (*Self::ptr()).icsr.read() & SCB_ICSR_PENDSTSET == SCB_ICSR_PENDSTSET }
+        unsafe { (*Self::PTR).icsr.read() & SCB_ICSR_PENDSTSET == SCB_ICSR_PENDSTSET }
     }
 
     /// Set the PENDSTCLR bit in the ICSR register which will clear a pending SysTick interrupt
     #[inline]
     pub fn clear_pendst() {
         unsafe {
-            (*Self::ptr()).icsr.write(SCB_ICSR_PENDSTCLR);
+            (*Self::PTR).icsr.write(SCB_ICSR_PENDSTCLR);
         }
     }
 }
@@ -934,7 +935,7 @@ pub enum SystemHandler {
     UsageFault = 6,
 
     /// Secure fault interrupt (only on ARMv8-M)
-    #[cfg(any(armv8m, target_arch = "x86_64"))]
+    #[cfg(any(armv8m, native))]
     SecureFault = 7,
 
     /// SV call interrupt
@@ -966,7 +967,7 @@ impl SCB {
 
             // NOTE(unsafe): Index is bounded to [4,15] by SystemHandler design.
             // TODO: Review it after rust-lang/rust/issues/13926 will be fixed.
-            let priority_ref = unsafe { (*Self::ptr()).shpr.get_unchecked(usize::from(index - 4)) };
+            let priority_ref = unsafe { (*Self::PTR).shpr.get_unchecked(usize::from(index - 4)) };
 
             priority_ref.read()
         }
@@ -978,7 +979,7 @@ impl SCB {
             // NOTE(unsafe): Index is bounded to [11,15] by SystemHandler design.
             // TODO: Review it after rust-lang/rust/issues/13926 will be fixed.
             let priority_ref = unsafe {
-                (*Self::ptr())
+                (*Self::PTR)
                     .shpr
                     .get_unchecked(usize::from((index - 8) / 4))
             };
@@ -1009,7 +1010,7 @@ impl SCB {
         {
             // NOTE(unsafe): Index is bounded to [4,15] by SystemHandler design.
             // TODO: Review it after rust-lang/rust/issues/13926 will be fixed.
-            let priority_ref = (*Self::ptr()).shpr.get_unchecked(usize::from(index - 4));
+            let priority_ref = (*Self::PTR).shpr.get_unchecked(usize::from(index - 4));
 
             priority_ref.write(prio)
         }
@@ -1018,7 +1019,7 @@ impl SCB {
         {
             // NOTE(unsafe): Index is bounded to [11,15] by SystemHandler design.
             // TODO: Review it after rust-lang/rust/issues/13926 will be fixed.
-            let priority_ref = (*Self::ptr())
+            let priority_ref = (*Self::PTR)
                 .shpr
                 .get_unchecked(usize::from((index - 8) / 4));
 

@@ -11,12 +11,13 @@ license = "MIT OR Apache-2.0"
 name = "cortex-m"
 readme = "README.md"
 repository = "https://github.com/rust-embedded/cortex-m"
-version = "0.7.3"
-edition = "2018"
+version = "0.7.4"
+edition = "2021"
+rust-version = "1.59"
 links = "cortex-m"  # prevent multiple versions of this crate to be linked together
 
 [dependencies]
-bare-metal = { version = "0.2.4", features = ["const-fn"] }
+bare-metal = "1"
 volatile-register = "0.2.0"
 bitfield = "0.13.2"
 embedded-hal = "0.2.4"
@@ -29,12 +30,20 @@ optional = true
 [features]
 cm7 = []
 cm7-r0p1 = ["cm7"]
-inline-asm = []
 linker-plugin-lto = []
-std-map = []
+std = []
 
 [workspace]
-members = ["xtask", "cortex-m-semihosting", "panic-semihosting", "panic-itm"]
+members = [
+    "cortex-m-rt",
+    "cortex-m-semihosting",
+    "panic-itm",
+    "panic-semihosting",
+    "testsuite",
+    "testsuite/minitest",
+    "testsuite/minitest/macros",
+    "xtask",
+]
 
 [package.metadata.docs.rs]
 targets = [
